@@ -6,24 +6,29 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
+
+      # 1. Download the MotionCam source
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 2. Java 17
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+      # 3. Android SDK
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
           accept-android-sdk-licenses: true
           packages: ''
 
+      # 4. Install Android 12 SDK + build tools
       - name: Install Android SDK
         run: |
           sdkmanager \
@@ -31,37 +36,93 @@ jobs:
             "platforms;android-31" \
             "build-tools;31.0.0"
 
+      # 5. Install native build dependencies
+      # MotionCam setupenv requires LLVM, CMake, Clang and libclang
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            git \
+            build-essential \
+            llvm \
+            llvm-dev \
+            cmake \
+            clang \
+            libclang-dev \
+            python3
+
+      # 6. Check the project structure
       - name: Check project structure
         run: |
-          echo "=== Repository ==="
+          echo "=============================="
+          echo "Repository"
+          echo "=============================="
           ls -la
 
-          echo "=== MotionCam-Android ==="
+          echo ""
+          echo "=============================="
+          echo "MotionCam-Android"
+          echo "=============================="
           ls -la MotionCam-Android
 
-          echo "=== Gradle files ==="
-          find . -maxdepth 4 \
-            \( -name "gradlew" -o -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-            -print
+          echo ""
+          echo "=============================="
+          echo "Gradle wrapper"
+          echo "=============================="
+          ls -la MotionCam-Android/gradlew
 
+      # 7. Setup MotionCam native dependencies
       - name: Setup native dependencies
         run: |
           chmod +x setupenv.sh
+
+          export ANDROID_NDK="$ANDROID_HOME/ndk/27.3.13750724"
+          export LLVM_DIR="/usr"
+
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_NDK=$ANDROID_NDK"
+          echo "LLVM_DIR=$LLVM_DIR"
+
+          echo ""
+          echo "Checking NDK..."
+          ls -la "$ANDROID_NDK"
+
+          echo ""
+          echo "Checking LLVM..."
+          llvm-config --version || true
+
+          echo ""
+          echo "Running setupenv..."
           ./setupenv.sh
 
+      # 8. Build Android application
       - name: Build MotionCam
         working-directory: MotionCam-Android
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleDebug --stacktrace
 
+          ./gradlew assembleDebug \
+            --stacktrace \
+            --no-daemon
+
+      # 9. Find generated APK
       - name: Find APK
         run: |
-          find . -type f -name "*.apk" -print
+          echo "=============================="
+          echo "Generated APK files"
+          echo "=============================="
 
+          find . \
+            -type f \
+            -name "*.apk" \
+            -print
+
+      # 10. Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: MotionCam-Android12-debug
-          path: "**/build/outputs/apk/debug/*.apk"
+          path: |
+            MotionCam-Android/**/build/outputs/apk/debug/*.apk
           if-no-files-found: error
