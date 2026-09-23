@@ -6,6 +6,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -21,22 +22,42 @@ jobs:
         uses: android-actions/setup-android@v4
         with:
           accept-android-sdk-licenses: true
+          packages: ''
 
       - name: Install Android SDK
         run: |
-          sdkmanager --install \
+          sdkmanager \
             "platform-tools" \
             "platforms;android-31" \
             "build-tools;31.0.0"
 
-      - name: Make Gradle executable
-        run: chmod +x ./gradlew
+      - name: Check project structure
+        run: |
+          echo "=== Repository ==="
+          ls -la
 
-      - name: Build
-        run: ./gradlew assembleDebug --stacktrace
+          echo "=== MotionCam-Android ==="
+          ls -la MotionCam-Android
+
+          echo "=== Gradle files ==="
+          find . -maxdepth 4 \
+            \( -name "gradlew" -o -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -print
+
+      - name: Setup native dependencies
+        run: |
+          chmod +x setupenv.sh
+          ./setupenv.sh
+
+      - name: Build MotionCam
+        working-directory: MotionCam-Android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --stacktrace
 
       - name: Find APK
-        run: find . -type f -name "*.apk" -print
+        run: |
+          find . -type f -name "*.apk" -print
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
